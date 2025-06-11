@@ -1,0 +1,283 @@
+import random
+from typing import List
+from game.engine.hand_evaluator import HandEvaluator
+from game.engine.card import Card
+
+
+def generate_full_deck() -> List[Card]:
+    suits = [Card.CLUB, Card.DIAMOND, Card.HEART, Card.SPADE]
+    ranks = list(range(2, 15))
+    return [Card(suit, rank) for suit in suits for rank in ranks]
+
+
+def monte_carlo_win_rate(
+    my_hole: List[Card], community: List[Card], iterations=10000
+) -> float:
+    known_cards = my_hole + community
+    deck = [card for card in generate_full_deck() if card not in known_cards]
+
+    wins, ties, losses = 0, 0, 0
+
+    for _ in range(iterations):
+        random.shuffle(deck)
+        opp_hole = deck[:2]
+
+        remaining = 5 - len(community)
+        community_fill = deck[2 : 2 + remaining]
+        full_community = community + community_fill
+
+        my_score = HandEvaluator.eval_hand(my_hole, full_community)
+        opp_score = HandEvaluator.eval_hand(opp_hole, full_community)
+
+        if my_score > opp_score:
+            wins += 1
+        elif my_score == opp_score:
+            ties += 1
+        else:
+            losses += 1
+
+    total = wins + ties + losses
+    return (wins + 0.5 * ties) / total if total > 0 else 0.0
+
+
+def river_WR_test(hole_card: List[Card], community_card: List[Card]) -> float:
+    my_score = HandEvaluator.eval_hand(hole_card, community_card)
+    total = 0
+    win = 0
+    full_deck = generate_full_deck()
+    unknown = [c for c in full_deck if c not in hole_card and c not in community_card]
+
+    for i in range(len(unknown)):
+        for j in range(i + 1, len(unknown)):
+            opp_score = HandEvaluator.eval_hand(
+                [unknown[i], unknown[j]], community_card
+            )
+            if my_score > opp_score:
+                win += 1
+            elif my_score == opp_score:
+                win += 0.5
+            total += 1
+
+    print(f"River Win Rate: {win / total:.2%}")
+    return win / total if total > 0 else 0.0
+
+
+def Starting_Hand_WR(hole_card: List[Card]) -> float:
+    if len(hole_card) != 2:
+        return 0.0
+
+    # Ensure input cards are of type Card
+    def to_card(c):
+        return c if isinstance(c, Card) else Card.from_str(c)
+
+    c1, c2 = to_card(hole_card[0]), to_card(hole_card[1])
+
+    def int_to_rank(rank: int) -> str:
+        return {
+            2: "2",
+            3: "3",
+            4: "4",
+            5: "5",
+            6: "6",
+            7: "7",
+            8: "8",
+            9: "9",
+            10: "T",
+            11: "J",
+            12: "Q",
+            13: "K",
+            14: "A",
+        }.get(rank, "?")
+
+    def rank_str(card):
+        return int_to_rank(card.rank)
+
+    if rank_str(c1) > rank_str(c2):
+        high, low = c1, c2
+    else:
+        high, low = c2, c1
+
+    suited = high.suit == low.suit
+    high_rank = rank_str(high)
+    low_rank = rank_str(low)
+
+    if high_rank == low_rank:
+        key = high_rank + low_rank
+    else:
+        key = f"{high_rank}{low_rank}" + ("s" if suited else "o")
+
+    win_rate_vs_1_opponent = {
+        "AA": 84.9,
+        "AKs": 66.2,
+        "AQs": 64.0,
+        "AJs": 63.0,
+        "ATs": 62.0,
+        "A9s": 60.0,
+        "A8s": 58.9,
+        "A7s": 57.7,
+        "A6s": 56.4,
+        "A5s": 56.3,
+        "A4s": 55.3,
+        "A3s": 54.5,
+        "A2s": 53.6,
+        "AKo": 64.5,
+        "AQo": 64.0,
+        "AJo": 63.0,
+        "ATo": 62.0,
+        "A9o": 60.0,
+        "A8o": 58.9,
+        "A7o": 57.7,
+        "A6o": 56.4,
+        "A5o": 56.3,
+        "A4o": 55.3,
+        "A3o": 54.5,
+        "A2o": 53.6,
+        "KK": 82.1,
+        "KQs": 62.4,
+        "KJs": 59.9,
+        "KTs": 59.0,
+        "K9s": 57.0,
+        "K8s": 55.0,
+        "K7s": 54.0,
+        "K6s": 52.9,
+        "K5s": 51.9,
+        "K4s": 50.9,
+        "K3s": 50.0,
+        "K2s": 49.1,
+        "KQo": 60.5,
+        "KJo": 59.9,
+        "KTo": 59.0,
+        "K9o": 57.0,
+        "K8o": 55.0,
+        "K7o": 54.0,
+        "K6o": 52.9,
+        "K5o": 51.9,
+        "K4o": 50.9,
+        "K3o": 50.0,
+        "K2o": 49.1,
+        "QQ": 79.6,
+        "QJs": 59.1,
+        "QTs": 56.5,
+        "Q9s": 54.5,
+        "Q8s": 52.6,
+        "Q7s": 50.5,
+        "Q6s": 49.7,
+        "Q5s": 48.6,
+        "Q4s": 47.7,
+        "Q3s": 46.8,
+        "Q2s": 45.9,
+        "QJo": 57.0,
+        "QTo": 56.5,
+        "Q9o": 54.5,
+        "Q8o": 52.6,
+        "Q7o": 50.5,
+        "Q6o": 49.7,
+        "Q5o": 48.6,
+        "Q4o": 47.7,
+        "Q3o": 46.8,
+        "Q2o": 45.9,
+        "JJ": 77.1,
+        "JTs": 56.2,
+        "J9s": 52.3,
+        "J8s": 50.4,
+        "J7s": 48.4,
+        "J6s": 46.4,
+        "J5s": 45.6,
+        "J4s": 44.6,
+        "J3s": 43.8,
+        "J2s": 42.8,
+        "JTo": 53.8,
+        "J9o": 52.3,
+        "J8o": 50.4,
+        "J7o": 48.4,
+        "J6o": 46.4,
+        "J5o": 45.6,
+        "J4o": 44.6,
+        "J3o": 43.8,
+        "J2o": 42.8,
+        "TT": 74.7,
+        "T9s": 52.4,
+        "T8s": 48.5,
+        "T7s": 46.5,
+        "T6s": 44.6,
+        "T5s": 42.6,
+        "T4s": 41.8,
+        "T3s": 40.9,
+        "T2s": 40.1,
+        "T9o": 49.8,
+        "T8o": 48.5,
+        "T7o": 46.5,
+        "T6o": 44.6,
+        "T5o": 42.6,
+        "T4o": 41.8,
+        "T3o": 40.9,
+        "T2o": 40.1,
+        "99": 71.7,
+        "98s": 48.9,
+        "97s": 44.8,
+        "96s": 42.9,
+        "95s": 40.9,
+        "94s": 38.9,
+        "93s": 38.3,
+        "92s": 37.4,
+        "98o": 46.1,
+        "97o": 44.8,
+        "96o": 42.9,
+        "95o": 40.9,
+        "94o": 38.9,
+        "93o": 38.3,
+        "92o": 37.4,
+        "88": 68.7,
+        "87s": 45.7,
+        "86s": 41.5,
+        "85s": 39.6,
+        "84s": 37.5,
+        "83s": 35.6,
+        "82s": 35.0,
+        "87o": 42.7,
+        "86o": 41.5,
+        "85o": 39.6,
+        "84o": 37.5,
+        "83o": 35.6,
+        "82o": 35.0,
+        "77": 65.7,
+        "76s": 42.9,
+        "75s": 38.5,
+        "74s": 36.5,
+        "73s": 34.6,
+        "72s": 32.6,
+        "76o": 39.7,
+        "75o": 38.5,
+        "74o": 36.5,
+        "73o": 34.6,
+        "72o": 32.6,
+        "66": 62.7,
+        "65s": 40.3,
+        "64s": 35.9,
+        "63s": 34.0,
+        "62s": 32.0,
+        "65o": 37.0,
+        "64o": 35.9,
+        "63o": 34.0,
+        "62o": 32.0,
+        "55": 59.6,
+        "54s": 38.5,
+        "53s": 34.0,
+        "52s": 32.1,
+        "54o": 35.1,
+        "53o": 34.0,
+        "52o": 32.1,
+        "44": 56.3,
+        "43s": 35.7,
+        "42s": 31.1,
+        "43o": 32.1,
+        "42o": 31.1,
+        "33": 52.9,
+        "32s": 33.1,
+        "32o": 29.3,
+        "22": 49.3,
+    }
+
+    wr = win_rate_vs_1_opponent.get(key, 0.0)
+    # print(f"Starting Hand Win Rate for {key}: {wr}%")
+    return wr / 100

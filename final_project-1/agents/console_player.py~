@@ -166,7 +166,6 @@ class ConsolePlayer(BasePokerPlayer):
         self.last_state = state
         self.last_action = action["action"]
 
-        # Fix: unwrap raise amount dict to an integer (engine bug workaround)
         amount = action["amount"]
         if action["action"] == "raise" and isinstance(amount, dict):
             amount = amount["min"]
@@ -206,8 +205,11 @@ class ConsolePlayer(BasePokerPlayer):
         self.policy.update(
             self.last_state, self.last_action, reward, final_state, valid_actions
         )
-        self.policy.save_qtable()
         self.updated = False
+
+    def receive_game_result_message(self, result):
+        """Called once at the end of a game to persist Q-table."""
+        self.policy.save_qtable()
 
     def __wait_until_input(self):
         input("Enter some key to continue ...")

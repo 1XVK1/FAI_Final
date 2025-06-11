@@ -22,10 +22,11 @@ class RLPolicy:
                 json.dump({}, f)
 
     def load_qtable(self):
-        if os.path.exists(self.qtable_file):
-            with open(self.qtable_file, "r") as f:
-                return json.load(f)
-        return {}
+        if os.path.getsize(self.qtable_file) == 0:
+            with open(self.qtable_file, "w") as f:
+                json.dump({}, f)
+        with open(self.qtable_file, "r") as f:
+            return json.load(f)
 
     def save_qtable(self):
         with open(self.qtable_file, "w") as f:
@@ -51,7 +52,7 @@ class RLPolicy:
         )
 
 
-class ConsolePlayer(BasePokerPlayer):
+class AgentPlayer(BasePokerPlayer):
     def __init__(self, input_receiver=None):
         self.input_receiver = (
             input_receiver if input_receiver else self.__gen_raw_input_wrapper()
@@ -166,10 +167,16 @@ class ConsolePlayer(BasePokerPlayer):
         self.last_state = state
         self.last_action = action["action"]
 
-        # Fix: unwrap raise amount dict to an integer (engine bug workaround)
         amount = action["amount"]
         if action["action"] == "raise" and isinstance(amount, dict):
-            amount = amount["min"]
+            to_call = valid_actions[1]["amount"]
+            raise_min = amount["min"]
+            raise_max = amount["max"]
+
+            # Smarter capped raise instead of all-in
+            ideal_raise = to_call * random.uniform(1.5, 2.5)
+            capped_raise = min(raise_max, max(raise_min, int(ideal_raise)))
+            amount = capped_raise
 
         return action["action"], amount
 
@@ -228,5 +235,5 @@ class ConsolePlayer(BasePokerPlayer):
 
 
 def setup_ai():
-    return ConsolePlayer()
+    return AgentPlayer()
 

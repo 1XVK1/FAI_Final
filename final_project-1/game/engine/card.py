@@ -55,9 +55,15 @@ class Card:
         return cls(suit, rank)
 
     @classmethod
+    def int_to_rank(cls, rank: int) -> str:
+        assert 2 <= rank <= 14, "Rank must be between 2 and 14"
+        return cls.RANK_MAP[rank]
+
+    @classmethod
     def from_str(cls, str_card):
         assert len(str_card) == 2
         inverse = lambda hsh: {v: k for k, v in hsh.items()}
         suit = inverse(cls.SUIT_MAP)[str_card[0].upper()]
         rank = inverse(cls.RANK_MAP)[str_card[1]]
         return cls(suit, rank)
+
