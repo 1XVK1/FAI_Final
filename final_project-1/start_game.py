@@ -26,7 +26,7 @@ baseline_ais = [
 
 
 config = setup_config(max_round=20, initial_stack=1000, small_blind_amount=5)
-config.register_player(name="p1", algorithm=baseline1_ai())
+config.register_player(name="p1", algorithm=baseline2_ai())
 # config.register_player(name="p2", algorithm=random_ai())
 
 ## Play in interactive mode if uncomment

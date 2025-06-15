@@ -1,0 +1,24 @@
+class PostflopDecisionEngine:
+    def __init__(self, raise_threshold: float = 0.7, fold_threshold: float = 0.35):
+        self.original_raise = raise_threshold
+        self.original_fold = fold_threshold
+        self.raise_threshold = raise_threshold
+        self.fold_threshold = fold_threshold
+
+    def adjust_thresholds(self, round_state, win: bool, stats: dict):
+        n = stats["round_num"] + 1
+        alpha = 0.1
+
+        # Smooth adjustment based on outcomes
+        success_ratio = stats["raise_count"] / n if stats["raise_count"] > 0 else 0.5
+        fail_ratio = stats["fold_count"] / n if stats["fold_count"] > 0 else 0.5
+
+        # Update raise threshold within ±5% of original value
+        updated_raise = self.raise_threshold + alpha * (1 if win else -1) * success_ratio
+        min_r, max_r = self.original_raise * 0.95, self.original_raise * 1.05
+        self.raise_threshold = min(max_r, max(min_r, updated_raise))
+
+        # Update fold threshold within ±5% of original value
+        updated_fold = self.fold_threshold - alpha * (1 if win else -1) * fail_ratio
+        min_f, max_f = self.original_fold * 0.95, self.original_fold * 1.05
+        self.fold_threshold = min(max_f, max(min_f, updated_fold))

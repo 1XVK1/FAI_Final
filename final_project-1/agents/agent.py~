@@ -1,235 +1,142 @@
 import random
-import json
-import os
-import game.visualize_utils as U
 from game.players import BasePokerPlayer
-from agents.MCS import Starting_Hand_WR, river_WR_test, monte_carlo_win_rate
+from agents.MCS import monte_carlo_win_rate
+from agents.PreflopDecisionEngine import PreflopDecisionEngine
+from agents.BluffDecisionEngine import BluffDecisionEngine
+from agents.PostflopDecisionEngine import PostflopDecisionEngine
+from agents.detect_patterns import evaluate_hand_pattern
 from game.engine.card import Card
 
 
-class RLPolicy:
-    def __init__(self, qtable_file="qtable.json"):
-        self.qtable_file = qtable_file
-        self.ensure_qtable_file()
-        self.q_table = self.load_qtable()
-        self.alpha = 0.1
-        self.gamma = 0.9
-        self.epsilon = 0.1
-
-    def ensure_qtable_file(self):
-        # Only create file if it doesn't exist
-        if not os.path.exists(self.qtable_file):
-            with open(self.qtable_file, "w") as f:
-                json.dump({}, f)
-
-    def load_qtable(self):
-        # If file is empty, initialize it with {}
-        if os.path.getsize(self.qtable_file) == 0:
-            with open(self.qtable_file, "w") as f:
-                json.dump({}, f)
-        with open(self.qtable_file, "r") as f:
-            return json.load(f)
-
-    def save_qtable(self):
-        with open(self.qtable_file, "w") as f:
-            json.dump(self.q_table, f)
-
-    def get_action(self, state, valid_actions):
-        if state not in self.q_table:
-            self.q_table[state] = {a["action"]: 0.5 for a in valid_actions}
-
-        if random.random() < self.epsilon:
-            return random.choice(valid_actions)
-        best_action = max(self.q_table[state], key=self.q_table[state].get)
-        return next(a for a in valid_actions if a["action"] == best_action)
-
-    def update(self, state, action, reward, next_state, valid_actions):
-        if next_state not in self.q_table:
-            self.q_table[next_state] = {a["action"]: 0.5 for a in valid_actions}
-
-        max_q_next = max(self.q_table[next_state].values())
-        current_q = self.q_table[state].get(action, 0.5)
-        self.q_table[state][action] = current_q + self.alpha * (
-            reward + self.gamma * max_q_next - current_q
-        )
-
-
-class AgentPlayer(BasePokerPlayer):
-    def __init__(self, input_receiver=None):
-        self.input_receiver = (
-            input_receiver if input_receiver else self.__gen_raw_input_wrapper()
-        )
+class GTOAgent(BasePokerPlayer):
+    def __init__(self):
+        self.preflop_engine = PreflopDecisionEngine()
+        self.bluff_engine = BluffDecisionEngine(alpha=2.0)
+        self.postflop_engine = PostflopDecisionEngine(raise_threshold=0.65, fold_threshold=0.3)
         self.has_triggered_fold = False
         self.is_bb = False
         self.updated = False
         self.fold_win_threshold = 1150
         self.previous_stack = 1000
         self.opponent_stack = 1000
-        self.own_side_pot = False
-        self.max_r = 0
-        self.Win_rate = self.__init_win_rate__()
-        self.policy = RLPolicy()
-        self.last_state = None
-        self.last_action = None
+        self.last_preflop_bucket = None
+        self.opponent_stats = {
+            "your_raises": 0,
+            "opponent_calls": 0,
+            "opponent_call_rate": 0.0
+        }
+        self.round_stats = {"round_num": 0, "raise_count": 0, "fold_count": 0, "call_count": 0}
 
     def declare_action(self, valid_actions, hole_card, round_state):
+        if self.has_triggered_fold:
+            return "fold", 0
+
         seats = round_state["seats"]
         for i, seat in enumerate(seats):
             if seat["uuid"] == self.uuid:
                 self_pos = i
                 current_stack = seat["stack"]
-                break
             else:
-                oppenent_current_stack = seat["stack"]
+                self.opponent_stack = seat["stack"]
 
         community_card = round_state.get("community_card", [])
         raise_act_min = valid_actions[2]["amount"]["min"]
         raise_act_max = valid_actions[2]["amount"]["max"]
         sb_pos = round_state["small_blind_pos"]
         bb_pos = round_state["big_blind_pos"]
-
-        if "small_blind_amount" in round_state:
-            sb_value = round_state["small_blind_amount"]
-            bb_value = 2 * sb_value
-        else:
-            sb_value = 10
-            bb_value = 20
-
-        if self_pos == sb_pos:
-            self.is_bb = False
-        elif self_pos == bb_pos:
-            self.is_bb = True
+        sb_value = round_state.get("small_blind_amount", 10)
+        bb_value = 2 * sb_value
+        self.is_bb = (self_pos == bb_pos)
 
         if not self.updated:
             self.updated = True
-            if self.is_bb:
-                self.fold_win_threshold -= bb_value
-            else:
-                self.fold_win_threshold -= sb_value
+            self.fold_win_threshold -= bb_value if self.is_bb else sb_value
 
-        to_call = valid_actions[1]["amount"]
-        EWR = 0.0
-        street = round_state.get("street", "")
+        if current_stack > self.fold_win_threshold:
+            self.has_triggered_fold = True
+            return "fold", 0
+
+        street = round_state["street"].lower()
 
         if street == "preflop":
-            MCS = Starting_Hand_WR(hole_card)
-            self.Win_rate["preflop"]["times"] += 1
-            self.Win_rate["preflop"]["rate"] = (
-                MCS
-                + self.Win_rate["preflop"]["rate"]
-                * (self.Win_rate["preflop"]["times"] - 1)
-            ) / self.Win_rate["preflop"]["times"]
-            EWR = self.Win_rate["preflop"]["rate"]
+            action, amount, bucket = self.preflop_engine.decide(valid_actions, hole_card)
+            self.last_preflop_bucket = bucket
+            print(f"Preflop win rate for {hole_card}: {amount/valid_actions[2]['amount']['max']:.2f}")
+            return action, amount
 
-        elif street == "flop" or street == "turn":
-            MCS = monte_carlo_win_rate(hole_card, community_card, iterations=20000)
-            if street == "flop":
-                self.Win_rate["flop"]["times"] += 1
-                self.Win_rate["flop"]["rate"] = (
-                    MCS
-                    + self.Win_rate["flop"]["rate"]
-                    * (self.Win_rate["flop"]["times"] - 1)
-                ) / self.Win_rate["flop"]["times"]
-                EWR = (
-                    0.9 * self.Win_rate["flop"]["rate"]
-                    + 0.1 * self.Win_rate["preflop"]["rate"]
-                )
-            else:
-                self.Win_rate["turn"]["times"] += 1
-                self.Win_rate["turn"]["rate"] = (
-                    MCS
-                    + self.Win_rate["turn"]["rate"]
-                    * (self.Win_rate["turn"]["times"] - 1)
-                ) / self.Win_rate["turn"]["times"]
-                EWR = (
-                    0.95 * self.Win_rate["turn"]["rate"]
-                    + 0.05 * self.Win_rate["flop"]["rate"]
-                )
+        def to_card(c):
+            return c if isinstance(c, Card) else Card.from_str(c)
 
-        elif street == "river":
-            MCS = river_WR_test(hole_card, community_card)
-            self.Win_rate["river"]["times"] += 1
-            self.Win_rate["river"]["rate"] = (
-                MCS
-                + self.Win_rate["river"]["rate"] * (self.Win_rate["river"]["times"] - 1)
-            ) / self.Win_rate["river"]["times"]
-            EWR = (
-                0.96 * self.Win_rate["river"]["rate"]
-                + 0.04 * self.Win_rate["turn"]["rate"]
-            )
+        hole_card = [to_card(c) for c in hole_card]
+        community_card = [to_card(c) for c in community_card]
+
+        win_rate = monte_carlo_win_rate(hole_card, community_card)
+        print(f"Postflop win_rate for {hole_card} + {community_card}: {win_rate:.4f}")
+
+        pattern = evaluate_hand_pattern(hole_card, community_card)
+        pattern_boost = 0.0
+        if pattern.get("flush_draw"):
+            pattern_boost += 0.05
+        if pattern.get("open_ended"):
+            pattern_boost += 0.04
+        elif pattern.get("gutshot"):
+            pattern_boost += 0.02
+
+        adjusted_win_rate = win_rate + pattern_boost
+        print(f"Adjusted win_rate after pattern boost: {adjusted_win_rate:.4f}")
+
+        if self.bluff_engine.decide_bluff(adjusted_win_rate):
+            raise_amount = max(int(raise_act_min + (adjusted_win_rate)**4 * (raise_act_max - raise_act_min)), 3 * raise_act_min)
+            self.round_stats["raise_count"] += 1
+            self.opponent_stats["your_raises"] += 1
+            return "raise", raise_amount
+
+        if win_rate < self.postflop_engine.fold_threshold:
+            self.round_stats["fold_count"] += 1
+            return "fold", 0
+        elif win_rate > self.postflop_engine.raise_threshold:
+            raise_amount = int(raise_act_min + win_rate * (raise_act_max - raise_act_min))
+            self.round_stats["raise_count"] += 1
+            self.opponent_stats["your_raises"] += 1
+            return "raise", raise_amount
         else:
-            EWR = 0.5
-
-        try:
-            state = f"{street}_{round(float(EWR), 1)}"
-        except (TypeError, ValueError):
-            state = f"{street}_0.5"
-
-        action = self.policy.get_action(state, valid_actions)
-        self.last_state = state
-        self.last_action = action["action"]
-
-        amount = action["amount"]
-        if action["action"] == "raise" and isinstance(amount, dict):
-            amount = amount["min"]
-
-        return action["action"], amount
+            self.round_stats["call_count"] += 1
+            self.opponent_stats["opponent_calls"] += 1
+            return "call", valid_actions[1]["amount"]
 
     def receive_game_start_message(self, game_info):
-        rules = game_info.get("rule", {})
-        max_round = rules.get("max_round", "N/A")
-        sb_value = rules.get("small_blind_amount", "N/A")
-        bb_value = sb_value * 2 if isinstance(sb_value, int) else "N/A"
-        init_stack = rules.get("initial_stack", "N/A")
-        self.fold_win_threshold = init_stack + (sb_value + bb_value) * (
-            (max_round + 1) // 2
-        )
-        self.max_r = max_round
+        self.previous_stack = game_info["rule"].get("initial_stack", 1000)
+        self.updated = False
+        self.has_triggered_fold = False
 
     def receive_round_start_message(self, round_count, hole_card, seats):
-        self.own_side_pot = False
-        self.__reset_win_rate()
-
-    def receive_game_update_message(self, new_action, round_state):
-        pass
+        self.updated = False
 
     def receive_street_start_message(self, street, round_state):
         pass
 
+    def receive_game_update_message(self, action, round_state):
+        pass
+
     def receive_round_result_message(self, winners, hand_info, round_state):
-        reward = 1 if any(winner["uuid"] == self.uuid for winner in winners) else -1
-        street = round_state.get("street", "")
-        final_state = f"{street}_end"
-        valid_actions = [
-            {"action": "fold"},
-            {"action": "call"},
-            {"action": "raise"},
-        ]
-        self.policy.update(
-            self.last_state, self.last_action, reward, final_state, valid_actions
-        )
-        self.policy.save_qtable()
-        self.updated = False
+        win = any(self.uuid == p["uuid"] for p in winners)
+        if self.last_preflop_bucket:
+            self.preflop_engine.update_thresholds(win, self.last_preflop_bucket)
+            self.last_preflop_bucket = None
 
-    def __wait_until_input(self):
-        input("Enter some key to continue ...")
+        self.postflop_engine.adjust_thresholds(round_state, win, self.round_stats)
 
-    def __gen_raw_input_wrapper(self):
-        return lambda msg: input(msg)
+        if self.opponent_stats["your_raises"] > 0:
+            raw_rate = self.opponent_stats["opponent_calls"] / self.opponent_stats["your_raises"]
+            self.opponent_stats["opponent_call_rate"] = 0.9 * self.opponent_stats["opponent_call_rate"] + 0.1 * raw_rate
 
-    def __reset_win_rate(self):
-        self.Win_rate = self.__init_win_rate__()
-
-    def __init_win_rate__(self):
-        return {
-            "preflop": {"rate": 0.0, "times": 0},
-            "flop": {"rate": 0.0, "times": 0},
-            "turn": {"rate": 0.0, "times": 0},
-            "river": {"rate": 0.0, "times": 0},
-        }
+        min_alpha = 1.3
+        max_alpha = 3.5
+        call_rate = self.opponent_stats["opponent_call_rate"]
+        self.bluff_engine.alpha = min_alpha + (max_alpha - min_alpha) * call_rate
+        self.round_stats["round_num"] += 1
 
 
 def setup_ai():
-    return AgentPlayer()
-
+    return GTOAgent()
 

@@ -32,3 +32,5 @@ config.register_player(name="p1", algorithm=baseline1_ai())
 ## Play in interactive mode if uncomment
 config.register_player(name="me", algorithm=agent_ai())
 game_result = start_poker(config, verbose=1)
+
+print(json.dumps(game_result, indent=4))

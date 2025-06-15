@@ -1,7 +1,7 @@
-import random
 from typing import List
-from game.engine.hand_evaluator import HandEvaluator
 from game.engine.card import Card
+from game.engine.hand_evaluator import HandEvaluator
+import random
 
 
 def generate_full_deck() -> List[Card]:
@@ -10,9 +10,7 @@ def generate_full_deck() -> List[Card]:
     return [Card(suit, rank) for suit in suits for rank in ranks]
 
 
-def monte_carlo_win_rate(
-    my_hole: List[Card], community: List[Card], iterations=10000
-) -> float:
+def monte_carlo_win_rate(my_hole: List[Card], community: List[Card], iterations=10000) -> float:
     known_cards = my_hole + community
     deck = [card for card in generate_full_deck() if card not in known_cards]
 
@@ -21,9 +19,8 @@ def monte_carlo_win_rate(
     for _ in range(iterations):
         random.shuffle(deck)
         opp_hole = deck[:2]
-
         remaining = 5 - len(community)
-        community_fill = deck[2 : 2 + remaining]
+        community_fill = deck[2: 2 + remaining]
         full_community = community + community_fill
 
         my_score = HandEvaluator.eval_hand(my_hole, full_community)
@@ -49,16 +46,13 @@ def river_WR_test(hole_card: List[Card], community_card: List[Card]) -> float:
 
     for i in range(len(unknown)):
         for j in range(i + 1, len(unknown)):
-            opp_score = HandEvaluator.eval_hand(
-                [unknown[i], unknown[j]], community_card
-            )
+            opp_score = HandEvaluator.eval_hand([unknown[i], unknown[j]], community_card)
             if my_score > opp_score:
                 win += 1
             elif my_score == opp_score:
                 win += 0.5
             total += 1
 
-    # print(f"River Win Rate: {win / total:.2%}")
     return win / total if total > 0 else 0.0
 
 
@@ -66,28 +60,25 @@ def Starting_Hand_WR(hole_card: List[Card]) -> float:
     if len(hole_card) != 2:
         return 0.0
 
-    # Ensure input cards are of type Card
     def to_card(c):
-        return c if isinstance(c, Card) else Card.from_str(c)
+        if isinstance(c, Card):
+            return c
+        try:
+            return Card.from_str(c)
+        except Exception:
+            print(f"Failed to parse card from string: {c}")
+            return None
 
     c1, c2 = to_card(hole_card[0]), to_card(hole_card[1])
+    if c1 is None or c2 is None:
+        return 0.0
 
     def int_to_rank(rank: int) -> str:
         return {
-            2: "2",
-            3: "3",
-            4: "4",
-            5: "5",
-            6: "6",
-            7: "7",
-            8: "8",
-            9: "9",
-            10: "T",
-            11: "J",
-            12: "Q",
-            13: "K",
-            14: "A",
-        }.get(rank, "?")
+            2: "2", 3: "3", 4: "4", 5: "5", 6: "6",
+            7: "7", 8: "8", 9: "9", 10: "T",
+            11: "J", 12: "Q", 13: "K", 14: "A",
+        }[rank]
 
     def rank_str(card):
         return int_to_rank(card.rank)
@@ -278,7 +269,14 @@ def Starting_Hand_WR(hole_card: List[Card]) -> float:
         "22": 49.3,
     }
 
-    wr = win_rate_vs_1_opponent.get(key, 0.0)
-    # print(f"Starting Hand Win Rate for {key}: {wr}%")
+    wr = win_rate_vs_1_opponent.get(key)
+
+    if wr is None:
+        wr = monte_carlo_win_rate([c1, c2], []) * 100
+        print(f"[Fallback Monte Carlo] Simulated WR for {key}: {wr:.2f}%")
+    else:
+        print(f"[Starting_Hand_WR] Key: {key}, WR from table: {wr}%")
+
     return wr / 100
+
 

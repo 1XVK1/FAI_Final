@@ -1,0 +1,18 @@
+import random
+
+class BluffDecisionEngine:
+    def __init__(self, alpha: float = 2.0, accumulator: float = None):
+        self.alpha = alpha
+        self.accumulator = accumulator if accumulator is not None else random.uniform(0.05, 0.15)
+
+    def decide_bluff(self, win_rate: float) -> bool:
+        bluff_probability = win_rate ** self.alpha
+        threshold = int(self.accumulator * 10000)
+        trigger = random.randint(1, 10000)
+        if trigger < threshold or win_rate > 0.65:
+            self.accumulator = 0.0  # Reset after bluff
+            return True
+        else:
+            self.accumulator = min(1.0, self.accumulator + 0.03)
+            return False
+

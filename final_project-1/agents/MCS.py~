@@ -3,16 +3,12 @@ from typing import List
 from game.engine.hand_evaluator import HandEvaluator
 from game.engine.card import Card
 
-
 def generate_full_deck() -> List[Card]:
     suits = [Card.CLUB, Card.DIAMOND, Card.HEART, Card.SPADE]
     ranks = list(range(2, 15))
     return [Card(suit, rank) for suit in suits for rank in ranks]
 
-
-def monte_carlo_win_rate(
-    my_hole: List[Card], community: List[Card], iterations=10000
-) -> float:
+def monte_carlo_win_rate(my_hole: List[Card], community: List[Card], iterations=10000) -> float:
     known_cards = my_hole + community
     deck = [card for card in generate_full_deck() if card not in known_cards]
 
@@ -21,7 +17,6 @@ def monte_carlo_win_rate(
     for _ in range(iterations):
         random.shuffle(deck)
         opp_hole = deck[:2]
-
         remaining = 5 - len(community)
         community_fill = deck[2 : 2 + remaining]
         full_community = community + community_fill
@@ -39,7 +34,6 @@ def monte_carlo_win_rate(
     total = wins + ties + losses
     return (wins + 0.5 * ties) / total if total > 0 else 0.0
 
-
 def river_WR_test(hole_card: List[Card], community_card: List[Card]) -> float:
     my_score = HandEvaluator.eval_hand(hole_card, community_card)
     total = 0
@@ -49,24 +43,19 @@ def river_WR_test(hole_card: List[Card], community_card: List[Card]) -> float:
 
     for i in range(len(unknown)):
         for j in range(i + 1, len(unknown)):
-            opp_score = HandEvaluator.eval_hand(
-                [unknown[i], unknown[j]], community_card
-            )
+            opp_score = HandEvaluator.eval_hand([unknown[i], unknown[j]], community_card)
             if my_score > opp_score:
                 win += 1
             elif my_score == opp_score:
                 win += 0.5
             total += 1
 
-    print(f"River Win Rate: {win / total:.2%}")
     return win / total if total > 0 else 0.0
-
 
 def Starting_Hand_WR(hole_card: List[Card]) -> float:
     if len(hole_card) != 2:
         return 0.0
 
-    # Ensure input cards are of type Card
     def to_card(c):
         return c if isinstance(c, Card) else Card.from_str(c)
 
@@ -74,20 +63,10 @@ def Starting_Hand_WR(hole_card: List[Card]) -> float:
 
     def int_to_rank(rank: int) -> str:
         return {
-            2: "2",
-            3: "3",
-            4: "4",
-            5: "5",
-            6: "6",
-            7: "7",
-            8: "8",
-            9: "9",
-            10: "T",
-            11: "J",
-            12: "Q",
-            13: "K",
-            14: "A",
-        }.get(rank, "?")
+            2: "2", 3: "3", 4: "4", 5: "5", 6: "6",
+            7: "7", 8: "8", 9: "9", 10: "T",
+            11: "J", 12: "Q", 13: "K", 14: "A",
+        }[rank]
 
     def rank_str(card):
         return int_to_rank(card.rank)
@@ -278,6 +257,7 @@ def Starting_Hand_WR(hole_card: List[Card]) -> float:
         "22": 49.3,
     }
 
-    wr = win_rate_vs_1_opponent.get(key, 0.0)
+    wr = win_rate_vs_1_opponent.get(key, 0.50)
     # print(f"Starting Hand Win Rate for {key}: {wr}%")
     return wr / 100
+

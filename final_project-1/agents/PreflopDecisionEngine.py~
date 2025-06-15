@@ -1,0 +1,57 @@
+from agents.MCS import Starting_Hand_WR
+
+DEFAULT_THRESHOLDS = {
+    "strong_raise": 0.80,
+    "medium_raise": 0.665,
+    "call": 0.2,
+}
+
+class PreflopDecisionEngine:
+    def __init__(self):
+        self.thresholds = DEFAULT_THRESHOLDS.copy()
+        self.stats = {
+            "strong_raise": {"wins": 0, "plays": 0},
+            "medium_raise": {"wins": 0, "plays": 0},
+            "call": {"wins": 0, "plays": 0},
+            "fold": {"wins": 0, "plays": 0}
+        }
+
+    def decide(self, valid_actions, hole_card):
+        win_rate = Starting_Hand_WR(hole_card)
+        print(f"Preflop win rate for {hole_card}: {win_rate:.2f}")
+        min_raise = valid_actions[2]["amount"]["min"]
+        max_raise = valid_actions[2]["amount"]["max"]
+
+        if win_rate >= self.thresholds["strong_raise"]:
+            return "raise", max_raise, "strong_raise"
+        elif win_rate >= self.thresholds["medium_raise"]:
+            raise_amount = max(
+                int(min_raise + win_rate ** 4 * (max_raise - min_raise)),
+                3 * min_raise
+            )
+            return "raise", raise_amount, "medium_raise"
+        elif win_rate >= self.thresholds["call"]:
+            return "call", valid_actions[1]["amount"], "call"
+        else:
+            return "fold", 0, "fold"
+
+    def update_thresholds(self, result: bool, bucket: str):
+        if bucket not in self.stats:
+            return
+
+        self.stats[bucket]["plays"] += 1
+        if result:
+            self.stats[bucket]["wins"] += 1
+
+        plays = self.stats[bucket]["plays"]
+        if plays >= 10:
+            winrate = self.stats[bucket]["wins"] / plays
+            original_val = DEFAULT_THRESHOLDS[bucket]
+            adjustment = (winrate - 0.5) * 0.02
+            new_val = max(
+                original_val * 0.95,
+                min(original_val * 1.05, self.thresholds[bucket] + adjustment)
+            )
+            self.thresholds[bucket] = new_val
+            self.stats[bucket] = {"wins": 0, "plays": 0}
+
